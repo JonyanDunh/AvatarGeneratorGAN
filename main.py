@@ -65,7 +65,7 @@ class Discriminator_Model(nn.Module):
         )
 
         self.fc1 = nn.Linear(3 * 10 * 10, 1)
-        self.optimizer = optim.SGD(self.parameters(), lr=0.0001)
+        self.optimizer = optim.SGD(self.parameters(), lr=0.0005)
         self.loss_fn = nn.BCEWithLogitsLoss().cuda()
         self.loss_train = 0.0
         self.items = 0
@@ -92,10 +92,9 @@ class Discriminator_Model(nn.Module):
         scaler.update()
 
         self.loss_train += loss.item()
+        writer.add_scalar('Discriminator Training loss/times', loss.item(), self.counter)
         self.items += 1
         self.counter += 1
-
-        writer.add_scalar('Discriminator Training loss/times', loss.item(), self.counter)
 
 
 class Generator_Model(nn.Module):
@@ -119,11 +118,11 @@ class Generator_Model(nn.Module):
             nn.ConvTranspose2d(256, 3, kernel_size=8, stride=2, padding=1), nn.BatchNorm2d(3), nn.Sigmoid(),
         )
         self.fc1 = nn.Linear(100, 3 * 11 * 11)
-        self.optimizer = optim.SGD(self.parameters(), lr=0.01)
+        self.optimizer = optim.AdamW(self.parameters(), lr=0.05)
         self.loss_train = 0.0
         self.items = 0
         self.counter = 0
-        self.Epoch=0
+        self.Epoch = 0
 
     def clear(self):
         self.loss_train = 0.0
@@ -135,7 +134,6 @@ class Generator_Model(nn.Module):
         out = out.view(-1, 3, 11, 11)
         out = self.model128(out)
         return out
-
 
     def trains(self, Discriminator, inputs, targets):
         Generator_outputs = self.forward(inputs)
@@ -150,12 +148,13 @@ class Generator_Model(nn.Module):
         self.loss_train += loss.item()
         writer.add_scalar('Generator Training loss/times', loss.item(), self.counter)
         if self.items == 0:
-            # plt.imshow(
-            #     ((Generator_outputs[0].detach()) * 255).reshape(3, 128, 128).permute(1, 2, 0).to(dtype=torch.int).cpu())
-            # plt.show()
-            # writer.add_image('Images-Epoch-{}'.format(self.Epoch), Generator_outputs[0])
-            writer.add_image('Images', Generator_outputs[0])
-            self.Epoch+=1
+
+            writer.add_image('Images-Epoch-{}'.format(self.Epoch), Generator_outputs[0])
+            self.Epoch += 1
+        if self.counter % 200 == 0:
+            plt.imshow(
+                ((Generator_outputs[0].detach()) * 255).reshape(3, 128, 128).permute(1, 2, 0).to(dtype=torch.int).cpu())
+            plt.show()
         self.items += 1
         self.counter += 1
 
@@ -177,16 +176,13 @@ def training_loop():
         print('{} Epoch {}, Discriminator Training loss {}, Generator Training loss {} '.format(
             datetime.datetime.now(), Epoch,
             Discriminator.loss_train / Discriminator.items, Generator.loss_train / Generator.items))
+        writer.add_scalars('Training loss/Epoch',
+                           {'Discriminator Training loss/Epoch': Discriminator.loss_train / Discriminator.items,
+                            'Generator Training loss/Epoch': Generator.loss_train / Generator.items}, Epoch)
         writer.add_scalar('Discriminator Training loss/Epoch', Discriminator.loss_train / Discriminator.items, Epoch)
         writer.add_scalar('Generator Training loss/Epoch', Generator.loss_train / Generator.items, Epoch)
         Discriminator.clear()
         Generator.clear()
-        for i, (name, param) in enumerate(Discriminator.named_parameters()):
-            if 'bn' not in name:
-                writer.add_histogram("Discriminator", param, Epoch)
-        for i, (name, param) in enumerate(Generator.named_parameters()):
-            if 'bn' not in name:
-                writer.add_histogram("Generator", param, Epoch)
         if Epoch % 10 == 0:
             global t
             torch.save(Generator.state_dict(), '/mnt/d/data/saved_model/gan_images/gan_images-{}.pt'.format(int(t)))
