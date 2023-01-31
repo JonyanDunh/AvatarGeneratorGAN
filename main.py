@@ -118,7 +118,7 @@ class Generator_Model(nn.Module):
             nn.ConvTranspose2d(256, 3, kernel_size=8, stride=2, padding=1), nn.BatchNorm2d(3), nn.Sigmoid(),
         )
         self.fc1 = nn.Linear(100, 3 * 11 * 11)
-        self.optimizer = optim.AdamW(self.parameters(), lr=0.05)
+        self.optimizer = optim.AdamW(self.parameters(), lr=0.08)
         self.loss_train = 0.0
         self.items = 0
         self.counter = 0
@@ -152,9 +152,10 @@ class Generator_Model(nn.Module):
             writer.add_image('Images-Epoch-{}'.format(self.Epoch), Generator_outputs[0])
             self.Epoch += 1
         if self.counter % 200 == 0:
-            plt.imshow(
-                ((Generator_outputs[0].detach()) * 255).reshape(3, 128, 128).permute(1, 2, 0).to(dtype=torch.int).cpu())
-            plt.show()
+            # plt.imshow(
+            #     ((Generator_outputs[0].detach()) * 255).reshape(3, 128, 128).permute(1, 2, 0).to(dtype=torch.int).cpu())
+            # plt.show()
+            writer.add_image('Images-Times-{}'.format(self.counter), Generator_outputs[0])
         self.items += 1
         self.counter += 1
 
@@ -183,9 +184,10 @@ def training_loop():
         writer.add_scalar('Generator Training loss/Epoch', Generator.loss_train / Generator.items, Epoch)
         Discriminator.clear()
         Generator.clear()
-        if Epoch % 10 == 0:
+        if Epoch % 50 == 0:
             global t
-            torch.save(Generator.state_dict(), '/mnt/d/data/saved_model/gan_images/gan_images-{}.pt'.format(int(t)))
+            torch.save(Discriminator.state_dict(), '/mnt/d/data/saved_model/gan_images/gan_images-Discriminator-{}.pt'.format(int(t)))
+            torch.save(Generator.state_dict(), '/mnt/d/data/saved_model/gan_images/gan_images-Generator-{}.pt'.format(int(t)))
 
 
 # def validate(model):
