@@ -32,7 +32,6 @@ def image2tensor():
 images = torch.load(r"/mnt/d/data/saved_tensor/gan_images/ganyu-images_128.pt").permute(3, 0, 1, 2).to(
     dtype=torch.float32, device="cuda") / 255
 
-print(images.shape[2])
 class View(nn.Module):
     def __init__(self, shape):
         super().__init__()
