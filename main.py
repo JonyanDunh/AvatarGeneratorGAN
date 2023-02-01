@@ -29,9 +29,6 @@ def image2tensor():
         dim=3), r"D:\data/saved_tensor/gan_images/ganyu-images_512.pt")
 
 
-images = torch.load(r"/mnt/d/data/saved_tensor/gan_images/ganyu-images_128.pt").permute(3, 0, 1, 2).to(
-    dtype=torch.float32, device="cuda") / 255
-
 class View(nn.Module):
     def __init__(self, shape):
         super().__init__()
@@ -59,11 +56,8 @@ class Discriminator_Model(nn.Module):
 
         self.fc1 = nn.Linear(3 * 10 * 10, 1)
         self.fc2 = nn.Linear(3 * 18 * 18, 1)
-        self.optimizer = optim.SGD(self.parameters(), lr=0.0005)
+        self.optimizer = optim.SGD(self.parameters(), lr=0.0003)
         self.loss_fn = nn.BCEWithLogitsLoss().cuda()
-        self.loss_train = 0.0
-        self.items = 0
-        self.counter = 0
 
     def clear(self):
         self.loss_train = 0.0
@@ -84,11 +78,7 @@ class Discriminator_Model(nn.Module):
         scaler.scale(loss).backward()
         scaler.step(self.optimizer)
         scaler.update()
-
-        self.loss_train += loss.item()
-        writer.add_scalar('Discriminator Training loss/times', loss.item(), self.counter)
-        self.items += 1
-        self.counter += 1
+        return loss.item()
 
 
 class Generator_Model(nn.Module):
@@ -137,20 +127,38 @@ class Generator_Model(nn.Module):
         scaler.step(self.optimizer)
         scaler.update()
         self.loss_train += loss.item()
-        writer.add_scalar('Generator Training loss/times', loss.item(), self.counter)
+
         if self.items == 0:
-            writer.add_image('Images-Epoch-{}'.format(self.Epoch), Generator_outputs[0])
+            writer.add_image('Image/Epoch', Generator_outputs[0],self.Epoch)
             self.Epoch += 1
-        if self.counter % 1000 == 0:
+        if self.counter % 500 == 0:
             # plt.imshow(
             #     ((Generator_outputs[0].detach()) * 255).reshape(3, 128, 128).permute(1, 2, 0).to(dtype=torch.int).cpu())
             # plt.show()
-            writer.add_image('Images-Times-{}'.format(self.counter), Generator_outputs[0])
+            writer.add_image('Image/Times', Generator_outputs[0],self.counter)
         self.items += 1
         self.counter += 1
+        return loss.item()
 
 
 t = time.time()
+
+# Generator = Generator_Model().cuda()
+# Generator = torch.compile(Generator)
+# Generator.load_state_dict(torch.load('gan_images-Generator-128-1675214311-Epoch-1600.pt'))
+# images=Generator(torch.randn(100, 100).cuda())
+# plt.figure(figsize=(15, 15))
+# for i in range(100):
+#     plt.subplot(10, 10, i+1)
+#     plt.xticks([])
+#     plt.yticks([])
+#     plt.grid(False)
+#     plt.imshow(
+#         ((images[i].detach()) * 255).reshape(3, 128, 128).permute(1, 2, 0).to(dtype=torch.int).cpu(), cmap=plt.cm.binary)
+# plt.show()
+
+images = torch.load(r"/mnt/d/data/saved_tensor/gan_images/ganyu-images_128.pt").permute(3, 0, 1, 2).to(
+    dtype=torch.float32, device="cuda") / 255
 
 
 def training_loop():
@@ -158,27 +166,65 @@ def training_loop():
     Discriminator = torch.compile(Discriminator)
     Generator = Generator_Model().cuda()
     Generator = torch.compile(Generator)
+    Generator.load_state_dict(torch.load('gan_images-Generator-128-1675214311-Epoch-1600.pt'))
+    counter = 0
+
     for Epoch in range(100000):
+        Discriminator_real_loss_gross = 0.0
+        Discriminator_fake_loss_gross = 0.0
+        Generator_loss_gross = 0.0
+        counter_in_epoch = 0
         for imgs in torch.utils.data.DataLoader(images, batch_size=1, shuffle=False):
-            Discriminator.trains(imgs, torch.ones(imgs.shape[0], 1).cuda())
-            Discriminator.trains(Generator(torch.randn(imgs.shape[0], 100).cuda()).detach(),
-                                 torch.zeros(imgs.shape[0], 1).cuda())
-            Generator.trains(Discriminator, torch.randn(imgs.shape[0], 100).cuda(), torch.ones(imgs.shape[0], 1).cuda())
-        print('{} Epoch {}, Discriminator Training loss {}, Generator Training loss {} '.format(
+            Discriminator_real_loss = Discriminator.trains(imgs, torch.ones(imgs.shape[0], 1).cuda())
+            Discriminator_fake_loss = Discriminator.trains(Generator(torch.rand(imgs.shape[0], 100).cuda()).detach(),
+                                                           torch.zeros(imgs.shape[0], 1).cuda())
+            Generator_loss = Generator.trains(Discriminator, torch.randn(imgs.shape[0], 100).cuda(),
+                                              torch.ones(imgs.shape[0], 1).cuda())
+            Discriminator_real_loss_gross += Discriminator_real_loss
+            Discriminator_fake_loss_gross += Discriminator_fake_loss
+            Generator_loss_gross += Generator_loss
+            writer.add_scalars('Training loss/Times',
+                               {'Discriminator Real with Fake': (Discriminator_real_loss + Discriminator_fake_loss) / 2,
+                                'Discriminator Real': Discriminator_real_loss,
+                                'Discriminator Fake': Discriminator_fake_loss,
+                                'Generator': Generator_loss
+                                }, counter)
+            writer.add_scalars('Discriminator Training loss/Times',
+                               {'Real with Fake': (Discriminator_real_loss + Discriminator_fake_loss) / 2,
+                                'Real': Discriminator_real_loss,
+                                'Fake': Discriminator_fake_loss
+                                }, counter)
+            writer.add_scalar('Generator Training loss/Times', Generator_loss, counter)
+            counter += 1
+            counter_in_epoch += 1
+        print('{} Epoch {}, Training loss:\n{}'.format(
             datetime.datetime.now(), Epoch,
-            Discriminator.loss_train / Discriminator.items, Generator.loss_train / Generator.items))
+            {'Discriminator Real with Fake': (
+                                                     Discriminator_real_loss_gross + Discriminator_fake_loss_gross) / (2 * counter_in_epoch),
+             'Discriminator Real': Discriminator_real_loss_gross / counter_in_epoch,
+             'Discriminator Fake': Discriminator_fake_loss_gross / counter_in_epoch,
+             'Generator': Generator_loss_gross / counter_in_epoch}))
         writer.add_scalars('Training loss/Epoch',
-                           {'Discriminator Training loss/Epoch': Discriminator.loss_train / Discriminator.items,
-                            'Generator Training loss/Epoch': Generator.loss_train / Generator.items}, Epoch)
-        writer.add_scalar('Discriminator Training loss/Epoch', Discriminator.loss_train / Discriminator.items, Epoch)
-        writer.add_scalar('Generator Training loss/Epoch', Generator.loss_train / Generator.items, Epoch)
+                           {'Discriminator Real with Fake': (
+                                                                    Discriminator_real_loss_gross + Discriminator_fake_loss_gross) / (2 * counter_in_epoch),
+                            'Discriminator Real': Discriminator_real_loss_gross / counter_in_epoch,
+                            'Discriminator Fake': Discriminator_fake_loss_gross / counter_in_epoch,
+                            'Generator': Generator_loss_gross / counter_in_epoch}, Epoch)
+        writer.add_scalars('Discriminator Training loss/Epoch', {
+            'Real with Fake': (Discriminator_real_loss_gross + Discriminator_fake_loss_gross) / (2 * counter_in_epoch),
+            'Real': Discriminator_real_loss_gross / counter_in_epoch,
+            'Fake': Discriminator_fake_loss_gross / counter_in_epoch}, Epoch)
+        writer.add_scalar('Generator Training loss/Epoch', Generator_loss_gross / counter_in_epoch, Epoch)
         Discriminator.clear()
         Generator.clear()
-        if Epoch % 50 == 0:
+        if Epoch % 100 == 0:
             global t
-            torch.save(Discriminator.state_dict(), '/mnt/d/data/saved_model/gan_images/gan_images-Discriminator-{}.pt'.format(int(t)))
-            torch.save(Generator.state_dict(), '/mnt/d/data/saved_model/gan_images/gan_images-Generator-{}-{}.pt'.format(images.shape[2],int(t)))
-
+            torch.save(Discriminator.state_dict(),
+                       '/mnt/d/data/saved_model/gan_images/gan_images-Discriminator-{}-{}-Epoch-{}.pt'.format(
+                           images.shape[2], int(t), Epoch))
+            torch.save(Generator.state_dict(),
+                       '/mnt/d/data/saved_model/gan_images/gan_images-Generator-{}-{}-Epoch-{}.pt'.format(
+                           images.shape[2], int(t), Epoch))
 
 
 training_loop()
