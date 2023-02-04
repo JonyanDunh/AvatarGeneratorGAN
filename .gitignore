@@ -151,3 +151,6 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 /runs/
+gan_images-Discriminator-128-1675214311-Epoch-1600.pt
+gan_images-Generator-128-1675214311-Epoch-1600.pt
+.idea
